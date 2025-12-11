@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from functools import partial
-from utils.model_utils import prefer_target_instrument
+from msst.utils.model_utils import prefer_target_instrument
+
 
 class STFT:
     def __init__(self, config):
@@ -21,12 +22,14 @@ class STFT:
             hop_length=self.hop_length,
             window=window,
             center=True,
-            return_complex=True
+            return_complex=True,
         )
         x = torch.view_as_real(x)
         x = x.permute([0, 3, 1, 2])
-        x = x.reshape([*batch_dims, c, 2, -1, x.shape[-1]]).reshape([*batch_dims, c * 2, -1, x.shape[-1]])
-        return x[..., :self.dim_f, :]
+        x = x.reshape([*batch_dims, c, 2, -1, x.shape[-1]]).reshape(
+            [*batch_dims, c * 2, -1, x.shape[-1]]
+        )
+        return x[..., : self.dim_f, :]
 
     def inverse(self, x):
         window = self.window.to(x.device)
@@ -37,20 +40,22 @@ class STFT:
         x = torch.cat([x, f_pad], -2)
         x = x.reshape([*batch_dims, c // 2, 2, n, t]).reshape([-1, 2, n, t])
         x = x.permute([0, 2, 3, 1])
-        x = x[..., 0] + x[..., 1] * 1.j
-        x = torch.istft(x, n_fft=self.n_fft, hop_length=self.hop_length, window=window, center=True)
+        x = x[..., 0] + x[..., 1] * 1.0j
+        x = torch.istft(
+            x, n_fft=self.n_fft, hop_length=self.hop_length, window=window, center=True
+        )
         x = x.reshape([*batch_dims, 2, -1])
         return x
 
 
 def get_norm(norm_type):
     def norm(c, norm_type):
-        if norm_type == 'BatchNorm':
+        if norm_type == "BatchNorm":
             return nn.BatchNorm2d(c)
-        elif norm_type == 'InstanceNorm':
+        elif norm_type == "InstanceNorm":
             return nn.InstanceNorm2d(c, affine=True)
-        elif 'GroupNorm' in norm_type:
-            g = int(norm_type.replace('GroupNorm', ''))
+        elif "GroupNorm" in norm_type:
+            g = int(norm_type.replace("GroupNorm", ""))
             return nn.GroupNorm(num_groups=g, num_channels=c)
         else:
             return nn.Identity()
@@ -59,12 +64,12 @@ def get_norm(norm_type):
 
 
 def get_act(act_type):
-    if act_type == 'gelu':
+    if act_type == "gelu":
         return nn.GELU()
-    elif act_type == 'relu':
+    elif act_type == "relu":
         return nn.ReLU()
-    elif act_type[:3] == 'elu':
-        alpha = float(act_type.replace('elu', ''))
+    elif act_type[:3] == "elu":
+        alpha = float(act_type.replace("elu", ""))
         return nn.ELU(alpha)
     else:
         raise Exception
@@ -76,7 +81,13 @@ class Upscale(nn.Module):
         self.conv = nn.Sequential(
             norm(in_c),
             act,
-            nn.ConvTranspose2d(in_channels=in_c, out_channels=out_c, kernel_size=scale, stride=scale, bias=False)
+            nn.ConvTranspose2d(
+                in_channels=in_c,
+                out_channels=out_c,
+                kernel_size=scale,
+                stride=scale,
+                bias=False,
+            ),
         )
 
     def forward(self, x):
@@ -89,7 +100,13 @@ class Downscale(nn.Module):
         self.conv = nn.Sequential(
             norm(in_c),
             act,
-            nn.Conv2d(in_channels=in_c, out_channels=out_c, kernel_size=scale, stride=scale, bias=False)
+            nn.Conv2d(
+                in_channels=in_c,
+                out_channels=out_c,
+                kernel_size=scale,
+                stride=scale,
+                bias=False,
+            ),
         )
 
     def forward(self, x):
@@ -182,7 +199,7 @@ class TFC_TDF_net(nn.Module):
         self.final_conv = nn.Sequential(
             nn.Conv2d(c + dim_c, c, 1, 1, 0, bias=False),
             act,
-            nn.Conv2d(c, self.num_target_instruments * dim_c, 1, 1, 0, bias=False)
+            nn.Conv2d(c, self.num_target_instruments * dim_c, 1, 1, 0, bias=False),
         )
 
         self.stft = STFT(config.audio)
@@ -202,7 +219,6 @@ class TFC_TDF_net(nn.Module):
         return x
 
     def forward(self, x):
-
         x = self.stft(x)
 
         mix = x = self.cac2cws(x)
