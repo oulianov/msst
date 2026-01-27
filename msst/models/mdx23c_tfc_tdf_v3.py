@@ -1,6 +1,8 @@
+from functools import partial
+
 import torch
 import torch.nn as nn
-from functools import partial
+
 from msst.utils.model_utils import prefer_target_instrument
 
 

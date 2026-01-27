@@ -44,6 +44,15 @@ wheels = [
 ]
 
 [[package]]
+name = "beartype"
+version = "0.14.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/3b/9ecfc75d1f8bb75cbdc87fcb3df7c6ec4bc8f7481cb7102859ade1736c9d/beartype-0.14.1.tar.gz", hash = "sha256:23df4715d19cebb2ce60e53c3cf44cd925843f00c71938222d777ea6332de3cb", size = 964899, upload-time = "2023-06-07T05:38:56.905Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f6/db/8d01583b4175e0e45a6e6cd0c28db2dae38ffe5477141a7ac3a5a09c8bb9/beartype-0.14.1-py3-none-any.whl", hash = "sha256:0f70fccdb8eb6d7ddfaa3ffe3a0b66cf2edeb13452bd71ad46615775c2fa34f6", size = 739737, upload-time = "2023-06-07T05:38:54.076Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.11.12"
 source = { registry = "https://pypi.org/simple" }
@@ -185,6 +194,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/43/fa/6d96a0978d19e17b68d634497769987b16c8f4cd0a7a05048bec693caa6b/decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360", size = 56711, upload-time = "2025-02-24T04:41:34.073Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/8c/f3147f5c4b73e7550fe5f9352eaa956ae838d5c51eb58e7a25b9f3e2643b/decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a", size = 9190, upload-time = "2025-02-24T04:41:32.565Z" },
+]
+
+[[package]]
+name = "einops"
+version = "0.8.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/77/850bef8d72ffb9219f0b1aac23fbc1bf7d038ee6ea666f331fa273031aa2/einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827", size = 56261, upload-time = "2026-01-26T04:13:17.638Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193", size = 65638, upload-time = "2026-01-26T04:13:18.546Z" },
 ]
 
 [[package]]
@@ -414,6 +432,7 @@ name = "msst"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "beartype" },
     { name = "huggingface-hub" },
     { name = "librosa" },
     { name = "loralib" },
@@ -423,6 +442,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pedalboard" },
     { name = "pytorch-optimizer" },
+    { name = "rotary-embedding-torch" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "soundfile" },
@@ -435,6 +455,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "beartype", specifier = "==0.14.1" },
     { name = "huggingface-hub", specifier = ">=0.23.0" },
     { name = "librosa", specifier = ">=0.9.2" },
     { name = "loralib", specifier = ">=0.1.2" },
@@ -444,6 +465,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pedalboard", specifier = "~=0.8.1" },
     { name = "pytorch-optimizer", specifier = ">=3.8.2" },
+    { name = "rotary-embedding-torch", specifier = "==0.3.5" },
     { name = "scipy", specifier = ">=1.10.1" },
     { name = "soundfile", specifier = ">=0.13.1" },
     { name = "torch", specifier = ">=2.9.1" },
@@ -1045,6 +1067,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/29/f1/34be702a69a5d272e844c98cee82351f880985cfbca0cc86378011078497/resampy-0.4.3.tar.gz", hash = "sha256:a0d1c28398f0e55994b739650afef4e3974115edbe96cd4bb81968425e916e47", size = 3080604, upload-time = "2024-03-05T20:36:08.119Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/b9/3b00ac340a1aab3389ebcc52c779914a44aadf7b0cb7a3bf053195735607/resampy-0.4.3-py3-none-any.whl", hash = "sha256:ad2ed64516b140a122d96704e32bc0f92b23f45419e8b8f478e5a05f83edcebd", size = 3076529, upload-time = "2024-03-05T20:36:02.439Z" },
+]
+
+[[package]]
+name = "rotary-embedding-torch"
+version = "0.3.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/2a/1a48c58df620822ffecffd5e1898708b5086a2d2b8b1b47f531bc7c25d00/rotary-embedding-torch-0.3.5.tar.gz", hash = "sha256:87f21eb4178dd82ff149303f754e39adde8b6ab1f8b797d6ca547267f359dc3a", size = 6610, upload-time = "2023-10-28T18:59:46.866Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/24/4ee455d4a1ea6cb66e937187383c1d28abdf63e4895118a3cbe5c5347517/rotary_embedding_torch-0.3.5-py3-none-any.whl", hash = "sha256:93f92f4ea1881439ce1f13ccf7b27d090833eb4984982ae93a7f1181575f9b29", size = 5072, upload-time = "2023-10-28T18:59:45.481Z" },
 ]
 
 [[package]]

@@ -1,13 +1,21 @@
+from functools import partial
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from functools import partial
-from utils.model_utils import prefer_target_instrument
+
+from msst.utils.model_utils import prefer_target_instrument
 
 
 class ShortTimeHartleyTransform:
-    def __init__(self, *, n_fft: int, hop_length: int, center: bool = True,
-                 pad_mode: str = "reflect") -> None:
+    def __init__(
+        self,
+        *,
+        n_fft: int,
+        hop_length: int,
+        center: bool = True,
+        pad_mode: str = "reflect",
+    ) -> None:
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.center = center
@@ -25,7 +33,9 @@ class ShortTimeHartleyTransform:
         return ShortTimeHartleyTransform._hartley_transform(X) / N
 
     def transform(self, *, signal: torch.Tensor) -> torch.Tensor:
-        assert signal.dim() == 3, "Signal must be a 3D tensor (batch_size, channel, samples)"
+        assert signal.dim() == 3, (
+            "Signal must be a 3D tensor (batch_size, channel, samples)"
+        )
         self.window = self.window.to(signal.device)
         batch_size, channels, samples = signal.shape
 
@@ -58,19 +68,31 @@ class ShortTimeHartleyTransform:
 
         return torch.stack(stht_coeffs, dim=-1)
 
-    def inverse_transform(self, *, stht_coeffs: torch.Tensor, length: int) -> torch.Tensor:
+    def inverse_transform(
+        self, *, stht_coeffs: torch.Tensor, length: int
+    ) -> torch.Tensor:
         self.window = self.window.to(stht_coeffs.device)
         # print(stht_coeffs.shape)
         batch_size, channels, n_fft, num_frames = stht_coeffs.shape
         signal_length = length
 
         # Initialize reconstruction
-        reconstructed_signal = torch.zeros((batch_size, channels, signal_length + (self.n_fft if self.center else 0)),
-                                           device=stht_coeffs.device, dtype=stht_coeffs.dtype)
-        normalization = torch.zeros(signal_length + (self.n_fft if self.center else 0),
-                                    device=stht_coeffs.device, dtype=stht_coeffs.dtype)
+        reconstructed_signal = torch.zeros(
+            (batch_size, channels, signal_length + (self.n_fft if self.center else 0)),
+            device=stht_coeffs.device,
+            dtype=stht_coeffs.dtype,
+        )
+        normalization = torch.zeros(
+            signal_length + (self.n_fft if self.center else 0),
+            device=stht_coeffs.device,
+            dtype=stht_coeffs.dtype,
+        )
 
-        window = self.window.to(stht_coeffs.device, stht_coeffs.dtype).unsqueeze(0).unsqueeze(0)
+        window = (
+            self.window.to(stht_coeffs.device, stht_coeffs.dtype)
+            .unsqueeze(0)
+            .unsqueeze(0)
+        )
 
         for i in range(num_frames):
             start = i * self.hop_length
@@ -79,7 +101,7 @@ class ShortTimeHartleyTransform:
             # Reconstruct frame and add to signal
             frame = self._inverse_hartley_transform(stht_coeffs[:, :, :, i]) * window
             reconstructed_signal[:, :, start:end] += frame
-            normalization[start:end] += (window ** 2).squeeze()
+            normalization[start:end] += (window**2).squeeze()
 
         # Normalize the overlapping regions
         eps = torch.finfo(normalization.dtype).eps
@@ -97,12 +119,12 @@ class ShortTimeHartleyTransform:
 
 def get_norm(norm_type):
     def norm(c, norm_type):
-        if norm_type == 'BatchNorm':
+        if norm_type == "BatchNorm":
             return nn.BatchNorm2d(c)
-        elif norm_type == 'InstanceNorm':
+        elif norm_type == "InstanceNorm":
             return nn.InstanceNorm2d(c, affine=True)
-        elif 'GroupNorm' in norm_type:
-            g = int(norm_type.replace('GroupNorm', ''))
+        elif "GroupNorm" in norm_type:
+            g = int(norm_type.replace("GroupNorm", ""))
             return nn.GroupNorm(num_groups=g, num_channels=c)
         else:
             return nn.Identity()
@@ -111,12 +133,12 @@ def get_norm(norm_type):
 
 
 def get_act(act_type):
-    if act_type == 'gelu':
+    if act_type == "gelu":
         return nn.GELU()
-    elif act_type == 'relu':
+    elif act_type == "relu":
         return nn.ReLU()
-    elif act_type[:3] == 'elu':
-        alpha = float(act_type.replace('elu', ''))
+    elif act_type[:3] == "elu":
+        alpha = float(act_type.replace("elu", ""))
         return nn.ELU(alpha)
     else:
         raise Exception
@@ -128,7 +150,13 @@ class Upscale(nn.Module):
         self.conv = nn.Sequential(
             norm(in_c),
             act,
-            nn.ConvTranspose2d(in_channels=in_c, out_channels=out_c, kernel_size=scale, stride=scale, bias=False)
+            nn.ConvTranspose2d(
+                in_channels=in_c,
+                out_channels=out_c,
+                kernel_size=scale,
+                stride=scale,
+                bias=False,
+            ),
         )
 
     def forward(self, x):
@@ -141,7 +169,13 @@ class Downscale(nn.Module):
         self.conv = nn.Sequential(
             norm(in_c),
             act,
-            nn.Conv2d(in_channels=in_c, out_channels=out_c, kernel_size=scale, stride=scale, bias=False)
+            nn.Conv2d(
+                in_channels=in_c,
+                out_channels=out_c,
+                kernel_size=scale,
+                stride=scale,
+                bias=False,
+            ),
         )
 
     def forward(self, x):
@@ -235,10 +269,12 @@ class TFC_TDF_net(nn.Module):
         self.final_conv = nn.Sequential(
             nn.Conv2d(c + dim_c, c, 1, 1, 0, bias=False),
             act,
-            nn.Conv2d(c, self.num_target_instruments * dim_c, 1, 1, 0, bias=False)
+            nn.Conv2d(c, self.num_target_instruments * dim_c, 1, 1, 0, bias=False),
         )
 
-        self.stft = ShortTimeHartleyTransform(n_fft=config.audio.n_fft, hop_length=config.audio.hop_length)
+        self.stft = ShortTimeHartleyTransform(
+            n_fft=config.audio.n_fft, hop_length=config.audio.hop_length
+        )
 
     def cac2cws(self, x):
         k = self.num_subbands
