@@ -1,1 +1,1 @@
-from models.scnet_unofficial.scnet import SCNet
+from msst.models.scnet_unofficial.scnet import SCNet

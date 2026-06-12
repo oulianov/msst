@@ -5,7 +5,7 @@ import torch
 import torch_audiomentations as tam
 from torch import nn
 
-from models.bandit.core.data._types import BatchedDataDict, DataDict
+from msst.models.bandit.core.data._types import BatchedDataDict, DataDict
 
 
 class BaseAugmentor(nn.Module, ABC):

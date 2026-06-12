@@ -5,9 +5,9 @@ import argparse
 # Добавляем корень репозитория в системный путь
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from valid import check_validation
-from inference import proc_folder
-from train import train_model
+from msst.valid import check_validation
+from msst.inference import proc_folder
+from msst.train import train_model
 from scripts.redact_config import redact_config
 from scripts.valid_to_inference import copying_files
 from scripts.trim import trim_directory

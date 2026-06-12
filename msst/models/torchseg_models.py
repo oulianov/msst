@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torchseg as smp
-from utils.model_utils import prefer_target_instrument
+from msst.utils.model_utils import prefer_target_instrument
 
 class STFT:
     def __init__(self, config):

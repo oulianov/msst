@@ -1,23 +1,69 @@
 # coding: utf-8
-__author__ = "Roman Solovyev (ZFTurbo): https://github.com/ZFTurbo/"
+__author__ = 'Roman Solovyev (ZFTurbo): https://github.com/ZFTurbo/'
 
 import argparse
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-import loralib as lora
 import numpy as np
 import torch
-import torch.distributed as dist
 import torch.nn as nn
-import tqdm.auto
 from ml_collections import ConfigDict
-from torch.optim import SGD, Adam, AdamW, RAdam, RMSprop
+from torch.optim import Adam, AdamW, SGD, RAdam, RMSprop
+from tqdm.auto import tqdm
+from typing import Dict, List, Tuple, Any, Union, Optional
+import torch.distributed as dist
 
-from .muon import AdaGO as AdaGO
-from .muon import Muon as Muon
+def bigshifts_wrapper(
+    config: ConfigDict,
+    model: torch.nn.Module,
+    mix: torch.Tensor,
+    device: torch.device,
+    model_type: str,
+    pbar: bool = False,
+    bigshifts: int = 1
+) -> Union[Dict[str, np.ndarray], np.ndarray]:
+    """BigShifts wrapper for inference-time demixing."""
+
+    should_print = not dist.is_initialized() or dist.get_rank() == 0
+
+    if bigshifts <= 0:
+        bigshifts = 1
+
+    if isinstance(mix, torch.Tensor):
+        mix = mix.detach().cpu().numpy()
+
+    shift_in_samples = mix.shape[1] // bigshifts
+    shifts = [x * shift_in_samples for x in range(bigshifts)]
+    results = []
+
+    if pbar and should_print:
+        shifts_iterator = tqdm(shifts, desc="BigShifts passes...", leave=False)
+    else:
+        shifts_iterator = shifts
+
+    for shift in shifts_iterator:
+        shifted_mix = np.concatenate((mix[:, -shift:], mix[:, :-shift]), axis=-1)
+        sources = demix(config, model, shifted_mix, device, model_type, pbar)
+
+        if isinstance(sources, dict):
+            unshifted = {
+                k: np.concatenate((v[..., shift:], v[..., :shift]), axis=-1)
+                for k, v in sources.items()
+            }
+            results.append(unshifted)
+        elif isinstance(sources, np.ndarray):
+            unshifted = np.concatenate((sources[..., shift:], sources[..., :shift]), axis=-1)
+            results.append(unshifted)
+        else:
+            raise ValueError("Unsupported return type from demix")
+
+    if isinstance(results[0], dict):
+        avg_result = {}
+        for k in results[0]:
+            avg_result[k] = np.mean([r[k] for r in results], axis=0)
+        return avg_result
+    return np.mean(results, axis=0)
 
 
 def demix(
@@ -26,7 +72,7 @@ def demix(
     mix: torch.Tensor,
     device: torch.device,
     model_type: str,
-    pbar: bool = False,
+    pbar: bool = False
 ) -> Union[Dict[str, np.ndarray], np.ndarray]:
     """
     Perform audio source separation with a given model.
@@ -58,18 +104,18 @@ def demix(
 
     mix = torch.tensor(mix, dtype=torch.float32)
 
-    if model_type == "htdemucs":
-        mode = "demucs"
+    if model_type == 'htdemucs':
+        mode = 'demucs'
     else:
-        mode = "generic"
+        mode = 'generic'
     # Define processing parameters based on the mode
-    if mode == "demucs":
+    if mode == 'demucs':
         chunk_size = config.training.samplerate * config.training.segment
         num_instruments = len(config.training.instruments)
         num_overlap = config.inference.num_overlap
         step = chunk_size // num_overlap
     else:
-        if "chunk_size" in config.inference:
+        if 'chunk_size' in config.inference:
             chunk_size = config.inference.chunk_size
         else:
             chunk_size = config.audio.chunk_size
@@ -87,7 +133,7 @@ def demix(
 
     batch_size = config.inference.batch_size
 
-    use_amp = getattr(config.training, "use_amp", True)
+    use_amp = getattr(config.training, 'use_amp', True)
 
     with torch.cuda.amp.autocast(enabled=use_amp):
         with torch.inference_mode():
@@ -100,7 +146,7 @@ def demix(
             batch_data = []
             batch_locations = []
             if pbar and should_print:
-                progress_bar = tqdm.auto.tqdm(
+                progress_bar = tqdm(
                     total=mix.shape[1], desc="Processing audio chunks", leave=False
                 )
             else:
@@ -108,15 +154,13 @@ def demix(
 
             while i < mix.shape[1]:
                 # Extract chunk and apply padding if necessary
-                part = mix[:, i : i + chunk_size].to(device)
+                part = mix[:, i:i + chunk_size].to(device)
                 chunk_len = part.shape[-1]
                 if mode == "generic" and chunk_len > chunk_size // 2:
                     pad_mode = "reflect"
                 else:
                     pad_mode = "constant"
-                part = nn.functional.pad(
-                    part, (0, chunk_size - chunk_len), mode=pad_mode, value=0
-                )
+                part = nn.functional.pad(part, (0, chunk_size - chunk_len), mode=pad_mode, value=0)
 
                 batch_data.append(part)
                 batch_locations.append((i, chunk_len))
@@ -128,7 +172,7 @@ def demix(
                     x = model(arr)
 
                     if mode == "generic":
-                        window = windowing_array.clone()  # using clone() fixes the clicks at chunk edges when using batch_size=1
+                        window = windowing_array.clone() # using clone() fixes the clicks at chunk edges when using batch_size=1
                         if i - step == 0:  # First audio chunk, no fadein
                             window[:fade_size] = 1
                         elif i >= mix.shape[1]:  # Last audio chunk, no fadeout
@@ -136,17 +180,11 @@ def demix(
 
                     for j, (start, seg_len) in enumerate(batch_locations):
                         if mode == "generic":
-                            result[..., start : start + seg_len] += (
-                                x[j, ..., :seg_len].cpu() * window[..., :seg_len]
-                            )
-                            counter[..., start : start + seg_len] += window[
-                                ..., :seg_len
-                            ]
+                            result[..., start:start + seg_len] += x[j, ..., :seg_len].cpu() * window[..., :seg_len]
+                            counter[..., start:start + seg_len] += window[..., :seg_len]
                         else:
-                            result[..., start : start + seg_len] += x[
-                                j, ..., :seg_len
-                            ].cpu()
-                            counter[..., start : start + seg_len] += 1.0
+                            result[..., start:start + seg_len] += x[j, ..., :seg_len].cpu()
+                            counter[..., start:start + seg_len] += 1.0
 
                     batch_data.clear()
                     batch_locations.clear()
@@ -181,9 +219,8 @@ def demix(
         return ret_data
 
 
-def initialize_model_and_device(
-    model: torch.nn.Module, device_ids: List[int]
-) -> Tuple[Union[torch.device, str], torch.nn.Module]:
+def initialize_model_and_device(model: torch.nn.Module, device_ids: List[int]) ->\
+        Tuple[Union[torch.device, str], torch.nn.Module]:
     """
     Move a model to the correct computation device and wrap with DataParallel if needed.
 
@@ -204,13 +241,13 @@ def initialize_model_and_device(
 
     if torch.cuda.is_available():
         if len(device_ids) <= 1:
-            device = torch.device(f"cuda:{device_ids[0]}")
+            device = torch.device(f'cuda:{device_ids[0]}')
             model = model.to(device)
         else:
-            device = torch.device(f"cuda:{device_ids[0]}")
+            device = torch.device(f'cuda:{device_ids[0]}')
             model = nn.DataParallel(model, device_ids=device_ids).to(device)
     else:
-        device = "cpu"
+        device = 'cpu'
         model = model.to(device)
         print("CUDA is not available. Running on CPU.")
 
@@ -241,100 +278,85 @@ def get_optimizer(config: ConfigDict, model: torch.nn.Module) -> torch.optim.Opt
 
     should_print = not dist.is_initialized() or dist.get_rank() == 0
     optim_params = dict()
-    if "optimizer" in config:
-        optim_params = dict(config["optimizer"])
-        if config.training.optimizer != "muon" and should_print:
-            print(f"Optimizer params from config:\n{optim_params}")
+    if 'optimizer' in config:
+        optim_params = dict(config['optimizer'])
+        if config.training.optimizer != 'muon' and should_print:
+            print(f'Optimizer params from config:\n{optim_params}')
 
-    name_optimizer = getattr(config.training, "optimizer", "No optimizer in config")
+    name_optimizer = getattr(config.training, 'optimizer',
+                             'No optimizer in config')
 
-    if name_optimizer == "adam":
+    if name_optimizer == 'adam':
         optimizer = Adam(model.parameters(), lr=config.training.lr, **optim_params)
-    elif name_optimizer == "adamw":
+    elif name_optimizer == 'adamw':
         optimizer = AdamW(model.parameters(), lr=config.training.lr, **optim_params)
-    elif name_optimizer == "radam":
+    elif name_optimizer == 'radam':
         optimizer = RAdam(model.parameters(), lr=config.training.lr, **optim_params)
-    elif name_optimizer == "rmsprop":
+    elif name_optimizer == 'rmsprop':
         optimizer = RMSprop(model.parameters(), lr=config.training.lr, **optim_params)
-    elif name_optimizer == "prodigy":
+    elif name_optimizer == 'prodigy':
         from prodigyopt import Prodigy
-
         # you can choose weight decay value based on your problem, 0 by default
         # We recommend using lr=1.0 (default) for all networks.
         optimizer = Prodigy(model.parameters(), lr=config.training.lr, **optim_params)
-    elif name_optimizer == "adamw8bit":
+    elif name_optimizer == 'adamw8bit':
         import bitsandbytes as bnb
-
-        optimizer = bnb.optim.AdamW8bit(
-            model.parameters(), lr=config.training.lr, **optim_params
-        )
-    elif name_optimizer == "muon":
+        optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=config.training.lr, **optim_params)
+    elif name_optimizer == 'muon':
+        from .muon import Muon as Muon
         if should_print:
             print("Using Muon optimizer with AdamW-like branch for non-muon params.")
         muon_params = [p for p in model.parameters() if p.ndim >= 2]
         adam_params = [p for p in model.parameters() if p.ndim < 2]
 
-        if (
-            not hasattr(config, "optimizer")
-            or "muon_group" not in config.optimizer
-            or "adam_group" not in config.optimizer
-        ):
-            raise ValueError(
-                "For the 'muon' optimizer, the config must have an 'optimizer' section "
-                "with 'muon_group' and 'adam_group' dictionaries."
-            )
+        if not hasattr(config, 'optimizer') or 'muon_group' not in config.optimizer or 'adam_group' not in config.optimizer:
+            raise ValueError("For the 'muon' optimizer, the config must have an 'optimizer' section "
+                             "with 'muon_group' and 'adam_group' dictionaries.")
 
         muon_group_config = dict(config.optimizer.muon_group)
         adam_group_config = dict(config.optimizer.adam_group)
 
-        muon_group_config.setdefault("weight_decouple", True)
-        adam_group_config.setdefault("weight_decouple", True)
+        muon_group_config.setdefault('weight_decouple', True)
+        adam_group_config.setdefault('weight_decouple', True)
 
         if should_print:
             print(f"Muon group params: {muon_group_config}")
             print(f"Adam group params: {adam_group_config}")
 
         param_groups = [
-            dict(params=muon_params, use_muon=True, **muon_group_config),
+            dict(params=muon_params, use_muon=True,  **muon_group_config),
             dict(params=adam_params, use_muon=False, **adam_group_config),
         ]
         optimizer = Muon(param_groups)
-    elif name_optimizer == "adago":
+    elif name_optimizer == 'adago':
+        from .muon import AdaGO as AdaGO
         if should_print:
             print("Using AdaGO optimizer with AdamW-like branch for non-muon params.")
         muon_params = [p for p in model.parameters() if p.ndim >= 2]
         adam_params = [p for p in model.parameters() if p.ndim < 2]
 
-        if (
-            not hasattr(config, "optimizer")
-            or "muon_group" not in config.optimizer
-            or "adam_group" not in config.optimizer
-        ):
-            raise ValueError(
-                "For 'adago', the config must have an 'optimizer' section with 'muon_group' and 'adam_group' dictionaries."
-            )
+        if not hasattr(config, 'optimizer') or 'muon_group' not in config.optimizer or 'adam_group' not in config.optimizer:
+            raise ValueError("For 'adago', the config must have an 'optimizer' section with 'muon_group' and 'adam_group' dictionaries.")
 
         muon_group_config = dict(config.optimizer.muon_group)
         adam_group_config = dict(config.optimizer.adam_group)
 
-        muon_group_config.setdefault("weight_decouple", True)
-        adam_group_config.setdefault("weight_decouple", True)
+        muon_group_config.setdefault('weight_decouple', True)
+        adam_group_config.setdefault('weight_decouple', True)
 
         if should_print:
             print(f"AdaGO muon group params: {muon_group_config}")
             print(f"AdaGO adam group params: {adam_group_config}")
 
         param_groups = [
-            dict(params=muon_params, use_muon=True, **muon_group_config),
+            dict(params=muon_params, use_muon=True,  **muon_group_config),
             dict(params=adam_params, use_muon=False, **adam_group_config),
         ]
         optimizer = AdaGO(param_groups)
     return optimizer
 
 
-def normalize_batch(
-    x: torch.Tensor, y: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
+def normalize_batch(x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Apply mean-variance normalization to a pair of tensors.
 
@@ -365,6 +387,8 @@ def apply_tta(
     waveforms_orig: Union[dict[str, np.ndarray], np.ndarray],
     device: torch.device,
     model_type: str,
+    bigshifts: int = 1,
+    pbar: bool = False
 ) -> Union[dict[str, np.ndarray], np.ndarray]:
     """
     Enhance source separation results using Test-Time Augmentation (TTA).
@@ -391,7 +415,15 @@ def apply_tta(
 
     # Process each augmented mixture
     for i, augmented_mix in enumerate(track_proc_list):
-        waveforms = demix(config, model, augmented_mix, device, model_type=model_type)
+        waveforms = bigshifts_wrapper(
+            config,
+            model,
+            augmented_mix,
+            device,
+            model_type=model_type,
+            bigshifts=bigshifts,
+            pbar=pbar
+        )
         for el in waveforms:
             if i == 0:
                 waveforms_orig[el] += waveforms[el][::-1].copy()
@@ -442,29 +474,27 @@ def _getWindowingArray(window_size: int, fade_size: int) -> torch.Tensor:
 
 def prefer_target_instrument(config: ConfigDict) -> List[str]:
     """
-    Return the list of target instruments based on the configuration.
-    If a specific target instrument is specified in the configuration,
-    it returns a list with that instrument. Otherwise, it returns the list of instruments.
+        Return the list of target instruments based on the configuration.
+        If a specific target instrument is specified in the configuration,
+        it returns a list with that instrument. Otherwise, it returns the list of instruments.
 
-    Parameters:
-    ----------
-    config : ConfigDict
-        Configuration object containing the list of instruments or the target instrument.
+        Parameters:
+        ----------
+        config : ConfigDict
+            Configuration object containing the list of instruments or the target instrument.
 
-    Returns:
-    -------
-    List[str]
-        A list of target instruments.
-    """
-    if getattr(config.training, "target_instrument", None):
+        Returns:
+        -------
+        List[str]
+            A list of target instruments.
+        """
+    if getattr(config.training, 'target_instrument', None):
         return [config.training.target_instrument]
     else:
         return config.training.instruments
 
 
-def load_not_compatible_weights(
-    model: torch.nn.Module, old_model: dict, verbose: bool = False
-) -> None:
+def load_not_compatible_weights(model: torch.nn.Module, old_model: dict, verbose: bool = False) -> None:
     """
     Load a possibly incompatible state dict into `model` with best-effort matching.
 
@@ -486,45 +516,36 @@ def load_not_compatible_weights(
 
     new_model = model.state_dict()
 
-    if "state" in old_model:
+    if 'state' in old_model:
         # Fix for htdemucs weights loading
-        old_model = old_model["state"]
-    if "state_dict" in old_model:
+        old_model = old_model['state']
+    if 'state_dict' in old_model:
         # Fix for apollo weights loading
-        old_model = old_model["state_dict"]
-    if "model_state_dict" in old_model:
+        old_model = old_model['state_dict']
+    if 'model_state_dict' in old_model:
         # Fix for full_check_point
-        old_model = old_model["model_state_dict"]
+        old_model = old_model['model_state_dict']
 
     for el in new_model:
         if el in old_model:
             if should_print:
-                print(f"Match found for {el}!")
+                print(f'Match found for {el}!')
             if new_model[el].shape == old_model[el].shape:
                 if should_print:
-                    print("Action: Just copy weights!")
+                    print('Action: Just copy weights!')
                 new_model[el] = old_model[el]
             else:
-                if (
-                    len(new_model[el].shape) != len(old_model[el].shape)
-                    and should_print
-                ):
-                    print(
-                        "Action: Different dimension! Too lazy to write the code... Skip it"
-                    )
+                if len(new_model[el].shape) != len(old_model[el].shape) and should_print:
+                    print('Action: Different dimension! Too lazy to write the code... Skip it')
                 else:
                     if should_print:
-                        print(
-                            f"Shape is different: {tuple(new_model[el].shape)} != {tuple(old_model[el].shape)}"
-                        )
+                        print(f'Shape is different: {tuple(new_model[el].shape)} != {tuple(old_model[el].shape)}')
                     ln = len(new_model[el].shape)
                     max_shape = []
                     slices_old = []
                     slices_new = []
                     for i in range(ln):
-                        max_shape.append(
-                            max(new_model[el].shape[i], old_model[el].shape[i])
-                        )
+                        max_shape.append(max(new_model[el].shape[i], old_model[el].shape[i]))
                         slices_old.append(slice(0, old_model[el].shape[i]))
                         slices_new.append(slice(0, new_model[el].shape[i]))
                     # print(max_shape)
@@ -538,13 +559,13 @@ def load_not_compatible_weights(
                     new_model[el] = max_matrix[slices_new]
         else:
             if should_print:
-                print(f"Match not found for {el}!")
-    model.load_state_dict(new_model)
+                print(f'Match not found for {el}!')
+    model.load_state_dict(
+        new_model
+    )
 
 
-def load_lora_weights(
-    model: torch.nn.Module, lora_path: str, device: str = "cpu"
-) -> None:
+def load_lora_weights(model: torch.nn.Module, lora_path: str, device: str = 'cpu') -> None:
     """
     Load LoRA weights into a model.
     This function updates the given model with LoRA-specific weights from the specified checkpoint file.
@@ -570,27 +591,29 @@ def load_lora_weights(
 
 def get_lora(args, config, model):
     if args.train_lora_loralib:
+        import loralib as lora
         model = bind_lora_to_model(config, model)
         lora.mark_only_lora_as_trainable(model)
     if args.train_lora_peft:
         if args.lora_checkpoint_peft:
             from peft import PeftModel
-
             model = PeftModel.from_pretrained(model, args.lora_checkpoint_peft)
             for name, param in model.named_parameters():
-                if "lora" in name.lower():
+                if 'lora' in name.lower():
                     param.requires_grad = True
         else:
             from peft import LoraConfig, get_peft_model
-
-            lora_config = LoraConfig(**config["lora"])
+            lora_config = LoraConfig(
+                **config['lora']
+            )
             model = get_peft_model(model, lora_config)
     return model
 
 
-def load_start_checkpoint(
-    args: argparse.Namespace, model: torch.nn.Module, old_model, type_: str = "train"
-) -> None:
+def load_start_checkpoint(args: argparse.Namespace,
+                          model: torch.nn.Module,
+                          old_model,
+                          type_: str = 'train') -> None:
     """
     Load an initial checkpoint into `model`.
 
@@ -612,34 +635,32 @@ def load_start_checkpoint(
     should_print = not dist.is_initialized() or dist.get_rank() == 0
 
     if should_print:
-        print(f"Start from checkpoint: {args.start_check_point}")
-    if type_ in ["train"]:
+        print(f'Start from checkpoint: {args.start_check_point}')
+    if type_ in ['train']:
         if not args.load_only_compatible_weights:
             load_not_compatible_weights(model, old_model, verbose=False)
         else:
             model.load_state_dict(torch.load(args.start_check_point))
     else:
-        device = "cpu"
-        if args.model_type in ["htdemucs", "apollo"]:
-            old_model = torch.load(
-                args.start_check_point, map_location=device, weights_only=False
-            )
+        device = 'cpu'
+        if args.model_type in ['htdemucs', 'apollo']:
+            old_model = torch.load(args.start_check_point, map_location=device, weights_only=False)
             # Fix for htdemucs pretrained models
-            if "state" in old_model:
-                old_model = old_model["state"]
+            if 'state' in old_model:
+                old_model = old_model['state']
             # Fix for apollo pretrained models
-            if "state_dict" in old_model:
-                old_model = old_model["state_dict"]
+            if 'state_dict' in old_model:
+                old_model = old_model['state_dict']
         else:
-            if "state" in old_model:
+            if 'state' in old_model:
                 # Fix for htdemucs weights loading
-                old_model = old_model["state"]
-            if "state_dict" in old_model:
+                old_model = old_model['state']
+            if 'state_dict' in old_model:
                 # Fix for apollo weights loading
-                old_model = old_model["state_dict"]
-            if "model_state_dict" in old_model:
+                old_model = old_model['state_dict']
+            if 'model_state_dict' in old_model:
                 # Fix for full_check_point
-                old_model = old_model["model_state_dict"]
+                old_model = old_model['model_state_dict']
         model.load_state_dict(old_model)
 
     if args.lora_checkpoint_loralib:
@@ -665,16 +686,16 @@ def bind_lora_to_model(config: Dict[str, Any], model: nn.Module) -> nn.Module:
         The modified model with the replaced layers.
     """
 
-    if "lora" not in config:
-        raise ValueError(
-            "Configuration must contain the 'lora' key with parameters for LoRA."
-        )
+    if 'lora' not in config:
+        raise ValueError("Configuration must contain the 'lora' key with parameters for LoRA.")
+
+    import loralib as lora
 
     replaced_layers = 0  # Counter for replaced layers
     should_print = not dist.is_initialized() or dist.get_rank() == 0
 
     for name, module in model.named_modules():
-        hierarchy = name.split(".")
+        hierarchy = name.split('.')
         layer_name = hierarchy[-1]
 
         # Check if this is the target layer to replace (and layer_name == 'to_qkv')
@@ -693,8 +714,8 @@ def bind_lora_to_model(config: Dict[str, Any], model: nn.Module) -> nn.Module:
                         in_features=module.in_features,
                         out_features=module.out_features,
                         bias=module.bias is not None,
-                        **config["lora"],
-                    ),
+                        **config['lora']
+                    )
                 )
                 replaced_layers += 1  # Increment the counter
 
@@ -703,9 +724,7 @@ def bind_lora_to_model(config: Dict[str, Any], model: nn.Module) -> nn.Module:
                     print(f"Error replacing layer {name}: {e}")
 
     if replaced_layers == 0 and should_print:
-        print(
-            "Warning: No layers were replaced. Check the model structure and configuration."
-        )
+        print("Warning: No layers were replaced. Check the model structure and configuration.")
     elif should_print:
         print(f"Number of layers replaced with LoRA: {replaced_layers}")
 
@@ -756,46 +775,42 @@ def log_model_info(model: torch.nn.Module, results_path=None):
         if len(list(module.children())) == 0:  # Only leaf modules
             layer_params = sum(p.numel() for p in module.parameters())
             if layer_params > 0:
-                layer_info.append(
-                    {
-                        "name": name,
-                        "type": module.__class__.__name__,
-                        "parameters": layer_params,
-                    }
-                )
+                layer_info.append({
+                    "name": name,
+                    "type": module.__class__.__name__,
+                    "parameters": layer_params,
+                })
 
     model_info["layers"] = layer_info
 
     if results_path:
         path = os.path.join(results_path, "model_info.json")
         # Save model info
-        with open(path, "w") as f:
+        with open(path, 'w') as f:
             json.dump(model_info, f, indent=2)
 
     # Log summary
     if not dist.is_initialized() or dist.get_rank() == 0:
         print(f"Model: {model_info['model_class']}")
         print(
-            f"Total parameters: {model_info['parameters']['total']:,} ({model_info['parameters']['total_millions']}M)"
-        )
+            f"Total parameters: {model_info['parameters']['total']:,} ({model_info['parameters']['total_millions']}M)")
         print(
-            f"Trainable parameters: {model_info['parameters']['trainable']:,} ({model_info['parameters']['trainable_millions']}M)"
-        )
+            f"Trainable parameters: {model_info['parameters']['trainable']:,} ({model_info['parameters']['trainable_millions']}M)")
         print(f"Model size: {model_info['memory']['total_mb']:.2f} MB")
         print(f"Number of layers: {len(layer_info)}")
 
 
 def save_weights(
-    store_path: str,
-    model: nn.Module,
-    device_ids: List[int],
-    optimizer: torch.optim.Optimizer,
-    epoch: int,
-    all_time_all_metrics,
-    all_losses,
-    best_metric: float,
-    args,
-    scheduler: Optional[torch.optim.lr_scheduler.ReduceLROnPlateau] = None,
+        store_path: str,
+        model: nn.Module,
+        device_ids: List[int],
+        optimizer: torch.optim.Optimizer,
+        epoch: int,
+        all_time_all_metrics,
+        all_losses,
+        best_metric: float,
+        args,
+        scheduler: Optional[torch.optim.lr_scheduler.ReduceLROnPlateau] = None
 ) -> None:
     """
     Save a training checkpoint containing model weights, optimizer/scheduler states, and metadata.
@@ -829,13 +844,14 @@ def save_weights(
         "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
         "best_metric": best_metric,
         "all_metrics": all_time_all_metrics,
-        "all_losses": all_losses,
+        "all_losses": all_losses
     }
 
     # Save model weights
     if args.train_lora_peft:
-        model.save_pretrained(store_path + "_lora_")
+        model.save_pretrained(store_path + '_lora_')
     elif args.train_lora_loralib:
+        import loralib as lora
         checkpoint["model_state_dict"] = lora.lora_state_dict(model)
     else:
         if dist.is_initialized():
@@ -843,9 +859,7 @@ def save_weights(
             checkpoint["model_state_dict"] = model.module.state_dict()
         else:
             checkpoint["model_state_dict"] = (
-                model.state_dict()
-                if len(device_ids) <= 1
-                else model.module.state_dict()
+                model.state_dict() if len(device_ids) <= 1 else model.module.state_dict()
             )
 
     # Save only on rank 0 (or if not using DDP)
@@ -854,15 +868,15 @@ def save_weights(
 
 
 def save_last_weights(
-    args: argparse.Namespace,
-    model: nn.Module,
-    device_ids: List[int],
-    optimizer: torch.optim.Optimizer,
-    epoch: int,
-    all_time_all_metrics,
-    all_losses,
-    best_metric: float,
-    scheduler: Optional[torch.optim.lr_scheduler.ReduceLROnPlateau] = None,
+        args: argparse.Namespace,
+        model: nn.Module,
+        device_ids: List[int],
+        optimizer: torch.optim.Optimizer,
+        epoch: int,
+        all_time_all_metrics,
+        all_losses,
+        best_metric: float,
+        scheduler: Optional[torch.optim.lr_scheduler.ReduceLROnPlateau] = None,
 ) -> None:
     """
     Save the latest training checkpoint for continuation or recovery.
@@ -899,5 +913,5 @@ def save_last_weights(
         all_losses=all_losses,
         best_metric=best_metric,
         args=args,
-        scheduler=scheduler,
+        scheduler=scheduler
     )

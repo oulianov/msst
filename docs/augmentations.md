@@ -1,7 +1,7 @@
-### Augmentations 
+### Augmentations
 
-Augmentations allows to change stems on the fly increasing the size of dataset by creating new samples from old samples. 
-Now control for augmentations is done from config file. Below you can find the example of full config, 
+Augmentations allows to change stems on the fly increasing the size of dataset by creating new samples from old samples.
+Now control for augmentations is done from config file. Below you can find the example of full config,
 which includes all available augmentations:
 
 ```config
@@ -22,6 +22,11 @@ augmentations:
   mp3_compression_on_mixture_bitrate_min: 32
   mp3_compression_on_mixture_bitrate_max: 320
   mp3_compression_on_mixture_backend: "lameenc"
+
+  # Random chunk sizes (be careful with GPU memory)
+  chunk_size_augm: true
+  chunk_size_min: 44100
+  chunk_size_max: 661500
 
   all:
     channel_shuffle: 0.5 # Set 0 or lower to disable
@@ -136,10 +141,10 @@ augmentations:
     time_stretch: 0.01
     time_stretch_min_rate: 0.8
     time_stretch_max_rate: 1.25
-```   
+```
 
 You can copypaste it into your config to use augmentations.
-Notes: 
+Notes:
 * To completely disable all augmentations you can either remove `augmentations` section from config or set `enable` to `false`.
 * If you want to disable some augmentation, just set it to zero.
 * Augmentations in `all` subsections applied to all stems

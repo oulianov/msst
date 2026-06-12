@@ -3,7 +3,7 @@
 """
 
 import argparse
-from utils.settings import get_model_from_config
+from msst.utils.settings import get_model_from_config
 
 
 def parse_args() :

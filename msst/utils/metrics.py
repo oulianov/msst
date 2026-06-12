@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import torch
 import librosa
@@ -31,6 +32,12 @@ def sdr(references: np.ndarray, estimates: np.ndarray) -> float:
     num += eps
     den += eps
     return 10 * np.log10(num / den)
+
+
+def k_sdr(sdr: float, K: float = 10.0) -> float:
+    """Normalize SDR value using bounded logarithmic scaling."""
+    sdr = max(min(sdr, K), -K + 1e-6)
+    return 100.0 * math.log1p(sdr + K) / math.log1p(2 * K)
 
 
 def si_sdr(reference: np.ndarray, estimate: np.ndarray) -> float:
@@ -165,6 +172,35 @@ def LogWMSE_metric(
 
     res = log_wmse(mixture, reference, estimate)
     return float(res.cpu().numpy())
+
+
+def MultiL1SNRDB_metric(
+        reference: np.ndarray,
+        estimate: np.ndarray,
+        device: str = 'cpu',
+) -> float:
+    """
+    Calculate L1-SNR metric (higher is better).
+    Returns negative loss value for scheduler compatibility (mode='max').
+    """
+    from torch_l1_snr import MultiL1SNRDBLoss
+
+    l1_snr = MultiL1SNRDBLoss(
+        name="l1_snr_metric",
+        weight=1.0,
+        spec_weight=0.5,
+        l1_weight=0.0,
+        use_time_regularization=True,
+        use_spec_regularization=False,
+    )
+
+    reference_t = torch.from_numpy(reference).unsqueeze(0).to(device)
+    estimate_t = torch.from_numpy(estimate).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        res = l1_snr(estimate_t, reference_t)
+
+    return -float(res.cpu().numpy())
 
 
 def AuraSTFT_metric(
@@ -355,6 +391,7 @@ def get_metrics(
         estimate: np.ndarray,
         mix: np.ndarray,
         device: str = 'cpu',
+        k: float =10
 ) -> Dict[str, float]:
     """
     Calculate a list of metrics to evaluate the performance of audio source separation models.
@@ -391,11 +428,11 @@ def get_metrics(
     estimate = estimate[..., :min_length]
     mix = mix[..., :min_length]
 
-    if 'sdr' in metrics:
+    if 'sdr' in metrics or 'k_sdr' in metrics:
         references = np.expand_dims(reference, axis=0)
         estimates = np.expand_dims(estimate, axis=0)
         result['sdr'] = float(sdr(references, estimates))
-
+        result['k_sdr'] = k_sdr(float(sdr(references, estimates)), k)
     if 'si_sdr' in metrics:
         result['si_sdr'] = float(si_sdr(reference, estimate))
 
@@ -410,6 +447,9 @@ def get_metrics(
 
     if 'aura_mrstft' in metrics:
         result['aura_mrstft'] = AuraMRSTFT_metric(reference, estimate, device)
+
+    if 'l1_snr' in metrics:
+        result['l1_snr'] = MultiL1SNRDB_metric(reference, estimate, device)
 
     if 'bleedless' in metrics or 'fullness' in metrics:
         bleedless, fullness = bleed_full(reference, estimate, device=device)

@@ -9,7 +9,7 @@ from torch.nn import Module, ModuleList
 from einops import rearrange, pack, unpack, reduce, repeat
 from einops.layers.torch import Rearrange
 import torch.nn.functional as F
-from models.bs_roformer.attend import Attend
+from msst.models.bs_roformer.attend import Attend
 from rotary_embedding_torch import RotaryEmbedding
 
 

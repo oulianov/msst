@@ -8,7 +8,7 @@ import torch
 import torchaudio as ta
 from torch.utils import data
 
-from models.bandit.core.data._types import AudioDict, DataDict
+from msst.models.bandit.core.data._types import AudioDict, DataDict
 
 
 class BaseSourceSeparationDataset(data.Dataset, ABC):

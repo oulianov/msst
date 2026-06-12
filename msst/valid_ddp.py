@@ -4,11 +4,11 @@ __version__ = '1.0.1'
 
 
 import torch
-from utils.model_utils import load_start_checkpoint
-from utils.settings import get_model_from_config, parse_args_valid, initialize_environment_ddp
+from msst.utils.model_utils import load_start_checkpoint
+from msst.utils.settings import get_model_from_config, parse_args_valid, initialize_environment_ddp
 import warnings
 import torch.multiprocessing as mp
-from valid import valid_multi_gpu
+from msst.valid import valid_multi_gpu
 import torch.distributed as dist
 
 warnings.filterwarnings("ignore")

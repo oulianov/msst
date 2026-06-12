@@ -4,8 +4,8 @@ __version__ = '1.0.1'
 
 import torch
 import torch.multiprocessing as mp
-from train import train_model
-from utils.settings import  cleanup_ddp
+from msst.train import train_model
+from msst.utils.settings import  cleanup_ddp
 import warnings
 
 warnings.filterwarnings("ignore")

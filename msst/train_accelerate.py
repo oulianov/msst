@@ -23,11 +23,11 @@ import torch.nn.functional as F
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 from accelerate import Accelerator
 
-from utils.dataset import MSSDataset
-from utils.model_utils import demix, prefer_target_instrument, load_not_compatible_weights
-from utils.metrics import sdr
-from utils.settings import manual_seed, get_model_from_config
-from utils.losses import masked_loss
+from msst.utils.dataset import MSSDataset
+from msst.utils.model_utils import demix, prefer_target_instrument, load_not_compatible_weights
+from msst.utils.metrics import sdr
+from msst.utils.settings import manual_seed, get_model_from_config
+from msst.utils.losses import masked_loss
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -277,7 +277,7 @@ def train_model(args):
             y = batch
             x = mixes
 
-            if args.model_type in ['mel_band_roformer', 'bs_roformer', 'mel_band_conformer', 'bs_conformer']:
+            if args.model_type in ['mel_band_roformer', 'bs_roformer', 'bs_mamba2', 'mel_band_conformer', 'bs_conformer']:
                 # loss is computed in forward pass
                 loss = model(x, y)
             else:

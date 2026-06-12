@@ -188,6 +188,83 @@ def spec_masked_loss(
     return masked_loss
 
 
+def l1_snr_loss(y_: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """
+    L1-SNR loss in time domain.
+
+    L1-based signal-to-noise ratio loss (without additional regularization).
+    From torch-l1-snr package.
+
+    Args:
+        y_ (torch.Tensor): Predicted waveform tensor.
+        y (torch.Tensor): Target waveform tensor.
+
+    Returns:
+        torch.Tensor: Scalar loss tensor.
+    """
+    from torch_l1_snr import L1SNRLoss
+    loss_fn = L1SNRLoss(name="l1_snr")
+    return loss_fn(y_, y)
+
+
+def l1_snr_db_loss(y_: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """
+    L1-SNR loss with dB-scale level regularization.
+
+    Extends L1-SNR with adaptive level-matching regularization in dB scale.
+    From torch-l1-snr package.
+
+    Args:
+        y_ (torch.Tensor): Predicted waveform tensor.
+        y (torch.Tensor): Target waveform tensor.
+
+    Returns:
+        torch.Tensor: Scalar loss tensor.
+    """
+    from torch_l1_snr import L1SNRDBLoss
+    loss_fn = L1SNRDBLoss(name="l1_snr_db")
+    return loss_fn(y_, y)
+
+
+def stft_l1_snr_db_loss(y_: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """
+    L1-SNR loss in multi-resolution STFT domain.
+
+    Applies L1-SNR to complex STFT (real/imaginary) across multiple resolutions.
+    From torch-l1-snr package.
+
+    Args:
+        y_ (torch.Tensor): Predicted waveform tensor.
+        y (torch.Tensor): Target waveform tensor.
+
+    Returns:
+        torch.Tensor: Scalar loss tensor.
+    """
+    from torch_l1_snr import STFTL1SNRDBLoss
+    loss_fn = STFTL1SNRDBLoss(name="stft_l1_snr_db")
+    return loss_fn(y_, y)
+
+
+def multi_l1_snr_db_loss(y_: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """
+    Combined time + STFT domain L1-SNR loss.
+
+    Balances time-domain and spectral-domain L1-SNR with optional regularization.
+    This is the recommended loss from torch-l1-snr for most use cases.
+    From torch-l1-snr package.
+
+    Args:
+        y_ (torch.Tensor): Predicted waveform tensor.
+        y (torch.Tensor): Target waveform tensor.
+
+    Returns:
+        torch.Tensor: Scalar loss tensor.
+    """
+    from torch_l1_snr import MultiL1SNRDBLoss
+    loss_fn = MultiL1SNRDBLoss(name="multi_l1_snr_db")
+    return loss_fn(y_, y)
+
+
 def choice_loss(
     args: argparse.Namespace,
     config: ConfigDict
@@ -201,6 +278,10 @@ def choice_loss(
     - `l1_loss`: mean absolute error.
     - `multistft_loss`: multi-resolution STFT magnitude loss (Steinmetz & Reiss, 2020).
     - `log_wmse_loss`: weighted MSE operating in a log/spectral perceptual space (log-weighted MSE).
+    - `l1_snr_loss`: L1-SNR loss in time domain (Watcharasupat et al., 2023).
+    - `l1_snr_db_loss`: L1-SNR with dB-scale level regularization.
+    - `stft_l1_snr_db_loss`: L1-SNR in multi-resolution STFT domain.
+    - `multi_l1_snr_db_loss`: combined time + STFT domain L1-SNR (recommended).
     - `spec_rmse_loss`: RMSE in complex STFT domain.
     - `spec_masked_loss`: quantile-masked spectral MSE (robust spectral loss).
 
@@ -256,6 +337,26 @@ def choice_loss(
         loss_fns.append(
             lambda y_pred, y_true, x: log_wmse(x, y_pred, y_true)
                                            * args.log_wmse_loss_coef
+        )
+
+    if 'l1_snr_loss' in args.loss:
+        loss_fns.append(
+            lambda y_pred, y_true, x=None: l1_snr_loss(y_pred, y_true) * args.l1_snr_loss_coef
+        )
+
+    if 'l1_snr_db_loss' in args.loss:
+        loss_fns.append(
+            lambda y_pred, y_true, x=None: l1_snr_db_loss(y_pred, y_true) * args.l1_snr_db_loss_coef
+        )
+
+    if 'stft_l1_snr_db_loss' in args.loss:
+        loss_fns.append(
+            lambda y_pred, y_true, x=None: stft_l1_snr_db_loss(y_pred, y_true) * args.stft_l1_snr_db_loss_coef
+        )
+
+    if 'multi_l1_snr_db_loss' in args.loss:
+        loss_fns.append(
+            lambda y_pred, y_true, x=None: multi_l1_snr_db_loss(y_pred, y_true) * args.multi_l1_snr_db_loss_coef
         )
 
     if 'spec_rmse_loss' in args.loss:
