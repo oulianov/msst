@@ -40,6 +40,7 @@ def once(fn):
 
 
 print_once = once(print)
+print_sage_attention_once = once(print)
 
 # main class
 
@@ -130,6 +131,9 @@ class Attend(nn.Module):
 
             self._sageattn = sageattn
 
+        print_sage_attention_once(
+            f"Using SageAttention for MSST attention on {q.device} with dtype {q.dtype}"
+        )
         return self._sageattn(
             q.contiguous(),
             k.contiguous(),
