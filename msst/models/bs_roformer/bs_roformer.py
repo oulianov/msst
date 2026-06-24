@@ -101,6 +101,7 @@ class Attention(Module):
 
         self.rotary_embed = rotary_embed
         self.pope_embed = pope_embed
+        self.sage_attention = sage_attention
         assert not (self.rotary_embed is not None and self.pope_embed is not None), (
             "cannot have both rotary and pope embeddings"
         )
@@ -128,6 +129,8 @@ class Attention(Module):
         )
 
         if exists(self.pope_embed):
+            if self.sage_attention:
+                raise RuntimeError("sage_attention=True is not supported with PoPE attention.")
             assert _HAS_POPE, "PoPE requested but PoPE_pytorch is not installed"
             out = flash_attn_with_pope(
                 q, k, v, pos_emb=self.pope_embed(q.shape[-2]), softmax_scale=self.scale

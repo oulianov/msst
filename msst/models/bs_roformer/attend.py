@@ -156,14 +156,19 @@ class Attend(nn.Module):
 
         scale = default(self.scale, q.shape[-1] ** -0.5)
 
-        if (
-            self.sage_attention
-            and q.is_cuda
-            and not self.training
-            and q.dtype in (torch.float16, torch.bfloat16)
-            and k.dtype == q.dtype
-            and v.dtype == q.dtype
-        ):
+        if self.sage_attention:
+            if not q.is_cuda:
+                raise RuntimeError("sage_attention=True requires CUDA tensors.")
+            if self.training:
+                raise RuntimeError("sage_attention=True is only supported in eval mode.")
+            if q.dtype not in (torch.float16, torch.bfloat16):
+                raise RuntimeError(
+                    "sage_attention=True requires float16 or bfloat16 attention tensors."
+                )
+            if k.dtype != q.dtype or v.dtype != q.dtype:
+                raise RuntimeError(
+                    "sage_attention=True requires q, k, and v to have the same dtype."
+                )
             return self.sage_attn(q, k, v)
 
         if self.flash:
