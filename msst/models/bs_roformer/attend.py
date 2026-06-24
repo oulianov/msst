@@ -45,13 +45,21 @@ print_once = once(print)
 
 
 class Attend(nn.Module):
-    def __init__(self, dropout=0.0, flash=False, scale=None):
+    def __init__(
+        self,
+        dropout=0.0,
+        flash=False,
+        scale=None,
+        sage_attention=False,
+    ):
         super().__init__()
         self.scale = scale
         self.dropout = dropout
         self.attn_dropout = nn.Dropout(dropout)
 
         self.flash = flash
+        self.sage_attention = sage_attention
+        self._sageattn = None
         assert not (
             flash and version.parse(torch.__version__) < version.parse("2.0.0")
         ), "in order to use flash attention, you must be using pytorch 2.0 or above"
@@ -111,6 +119,26 @@ class Attend(nn.Module):
 
         return out
 
+    def sage_attn(self, q, k, v):
+        if self._sageattn is None:
+            try:
+                from sageattention import sageattn
+            except ImportError as exc:
+                raise ImportError(
+                    "sage_attention=True requires the optional sageattention package."
+                ) from exc
+
+            self._sageattn = sageattn
+
+        return self._sageattn(
+            q.contiguous(),
+            k.contiguous(),
+            v.contiguous(),
+            tensor_layout="HND",
+            is_causal=False,
+            sm_scale=default(self.scale, q.shape[-1] ** -0.5),
+        )
+
     def forward(self, q, k, v):
         """
         einstein notation
@@ -123,6 +151,16 @@ class Attend(nn.Module):
         q_len, k_len, device = q.shape[-2], k.shape[-2], q.device
 
         scale = default(self.scale, q.shape[-1] ** -0.5)
+
+        if (
+            self.sage_attention
+            and q.is_cuda
+            and not self.training
+            and q.dtype in (torch.float16, torch.bfloat16)
+            and k.dtype == q.dtype
+            and v.dtype == q.dtype
+        ):
+            return self.sage_attn(q, k, v)
 
         if self.flash:
             return self.flash_attn(q, k, v)

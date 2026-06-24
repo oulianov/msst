@@ -101,6 +101,7 @@ class Attention(Module):
             rotary_embed=None,
             flash=True,
             pope_embed=None,
+            sage_attention=False,
     ):
         super().__init__()
         self.heads = heads
@@ -112,7 +113,11 @@ class Attention(Module):
         assert not (self.rotary_embed is not None and self.pope_embed is not None), \
             "cannot have both rotary and pope embeddings"
 
-        self.attend = Attend(flash=flash, dropout=dropout)
+        self.attend = Attend(
+            flash=flash,
+            dropout=dropout,
+            sage_attention=sage_attention,
+        )
 
         self.norm = RMSNorm(dim)
         self.to_qkv = nn.Linear(dim, dim_inner * 3, bias=False)
@@ -220,6 +225,7 @@ class Transformer(Module):
             pope_embed=None,
             flash_attn=True,
             linear_attn=False,
+            sage_attention=False,
     ):
         super().__init__()
         self.layers = ModuleList([])
@@ -241,7 +247,8 @@ class Transformer(Module):
                     dropout=attn_dropout,
                     rotary_embed=rotary_embed,
                     pope_embed=pope_embed,
-                    flash=flash_attn
+                    flash=flash_attn,
+                    sage_attention=sage_attention,
                 )
 
             self.layers.append(ModuleList([
@@ -394,6 +401,7 @@ class MelBandRoformer(Module):
             use_torch_checkpoint=False,
             skip_connection=False,
             use_pope: bool = False,
+            sage_attention: bool = False,
     ):
         super().__init__()
 
@@ -412,6 +420,7 @@ class MelBandRoformer(Module):
             attn_dropout=attn_dropout,
             ff_dropout=ff_dropout,
             flash_attn=flash_attn,
+            sage_attention=sage_attention,
         )
 
         if use_pope:

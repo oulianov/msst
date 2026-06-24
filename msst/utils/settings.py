@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import argparse
 import socket
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 from omegaconf import OmegaConf
 from ml_collections import ConfigDict
 import torch.distributed as dist
@@ -277,7 +277,11 @@ def load_config(model_type: str, config_path: str) -> Union[ConfigDict, OmegaCon
         raise ValueError(f"Error loading configuration: {e}")
 
 
-def get_model_from_config(model_type: str, config_path: str) -> Tuple[nn.Module, Union[ConfigDict, OmegaConf]]:
+def get_model_from_config(
+    model_type: str,
+    config_path: str,
+    model_overrides: Dict[str, Any] | None = None,
+) -> Tuple[nn.Module, Union[ConfigDict, OmegaConf]]:
     """
     Load and instantiate a model using a configuration file.
 
@@ -289,6 +293,8 @@ def get_model_from_config(model_type: str, config_path: str) -> Tuple[nn.Module,
             'scnet', 'mel_band_conformer', etc.).
         config_path (str): Filesystem path to the configuration file used to
             initialize the model.
+        model_overrides (Dict[str, Any] | None): Optional overrides applied to
+            config.model before model construction.
 
     Returns:
         Tuple[nn.Module, Union[ConfigDict, OmegaConf]]: A tuple containing the
@@ -301,6 +307,12 @@ def get_model_from_config(model_type: str, config_path: str) -> Tuple[nn.Module,
     """
 
     config = load_config(model_type, config_path)
+    if model_overrides:
+        if 'model' not in config:
+            raise ValueError(f"Configuration has no model section: {config_path}")
+        for key, value in model_overrides.items():
+            config.model[key] = value
+
     if 'model_type' in config.training:
         model_type = config.training.model_type
     if model_type == 'mdx23c':
