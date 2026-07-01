@@ -102,6 +102,12 @@ def demix(
 
     should_print = not dist.is_initialized() or dist.get_rank() == 0
 
+    if model_type == 'mdxnet_onnx':
+        if not hasattr(model, 'demix'):
+            raise ValueError("mdxnet_onnx models must implement demix().")
+        batch_size = int(getattr(config.inference, 'batch_size', 1))
+        return model.demix(mix, batch_size=batch_size, pbar=pbar)
+
     mix = torch.tensor(mix, dtype=torch.float32)
 
     if model_type == 'htdemucs':
@@ -246,6 +252,10 @@ def initialize_model_and_device(model: torch.nn.Module, device_ids: List[int]) -
         else:
             device = torch.device(f'cuda:{device_ids[0]}')
             model = nn.DataParallel(model, device_ids=device_ids).to(device)
+    elif torch.backends.mps.is_available():
+        device = torch.device('mps')
+        model = model.to(device)
+        print("CUDA is not available. Running on MPS.")
     else:
         device = 'cpu'
         model = model.to(device)

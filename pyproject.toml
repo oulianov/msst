@@ -98,6 +98,10 @@ conformer = ["conformer"]
 experimental_mdx23c_stht = ["loralib"]
 htdemucs = ["demucs", "einops", "openunmix"]
 mdx23c = ["loralib"]
+mdxnet_onnx = [
+  "onnxruntime-gpu>=1.20 ; platform_system == 'Linux' and platform_machine == 'x86_64'",
+  "onnxruntime>=1.20 ; platform_system != 'Linux' or platform_machine != 'x86_64'"
+]
 mel_band_conformer = [
   "beartype",
   "einops",

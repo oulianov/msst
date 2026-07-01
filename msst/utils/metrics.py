@@ -109,8 +109,8 @@ def L1Freq_metric(
         The L1 Frequency Metric in the range [0, 100], where higher values indicate better performance.
     """
 
-    reference = torch.from_numpy(reference).to(device)
-    estimate = torch.from_numpy(estimate).to(device)
+    reference = torch.from_numpy(reference).float().to(device)
+    estimate = torch.from_numpy(estimate).float().to(device)
 
     reference_stft = torch.stft(reference, fft_size, hop_size, return_complex=True)
     estimated_stft = torch.stft(estimate, fft_size, hop_size, return_complex=True)
@@ -166,9 +166,9 @@ def LogWMSE_metric(
         bypass_filter=False,  # bypass frequency filtering (False means apply filter)
     )
 
-    reference = torch.from_numpy(reference).unsqueeze(0).unsqueeze(0).to(device)
-    estimate = torch.from_numpy(estimate).unsqueeze(0).unsqueeze(0).to(device)
-    mixture = torch.from_numpy(mixture).unsqueeze(0).to(device)
+    reference = torch.from_numpy(reference).unsqueeze(0).unsqueeze(0).float().to(device)
+    estimate = torch.from_numpy(estimate).unsqueeze(0).unsqueeze(0).float().to(device)
+    mixture = torch.from_numpy(mixture).unsqueeze(0).float().to(device)
 
     res = log_wmse(mixture, reference, estimate)
     return float(res.cpu().numpy())
@@ -194,8 +194,8 @@ def MultiL1SNRDB_metric(
         use_spec_regularization=False,
     )
 
-    reference_t = torch.from_numpy(reference).unsqueeze(0).to(device)
-    estimate_t = torch.from_numpy(estimate).unsqueeze(0).to(device)
+    reference_t = torch.from_numpy(reference).unsqueeze(0).float().to(device)
+    estimate_t = torch.from_numpy(estimate).unsqueeze(0).float().to(device)
 
     with torch.no_grad():
         res = l1_snr(estimate_t, reference_t)
@@ -243,8 +243,8 @@ def AuraSTFT_metric(
         device=device,
     )
 
-    reference = torch.from_numpy(reference).unsqueeze(0).to(device)
-    estimate = torch.from_numpy(estimate).unsqueeze(0).to(device)
+    reference = torch.from_numpy(reference).unsqueeze(0).float().to(device)
+    estimate = torch.from_numpy(estimate).unsqueeze(0).float().to(device)
 
     res = 100 / (1. + 10 * stft_loss(reference, estimate))
     return float(res.cpu().numpy())
@@ -363,7 +363,7 @@ def bleed_full(
                               pad_mode="constant"))
 
     mel_basis = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels)
-    mel_filter_bank = torch.from_numpy(mel_basis).to(device)
+    mel_filter_bank = torch.from_numpy(mel_basis).float().to(device)
 
     S1_mel = torch.matmul(mel_filter_bank, D1)
     S2_mel = torch.matmul(mel_filter_bank, D2)

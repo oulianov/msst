@@ -32,7 +32,7 @@ def parse_args_train(dict_args: Union[argparse.Namespace, Dict, None]) -> argpar
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer, bs_roformer, swin_upernet, bandit")
+                        help="One of mdx23c, mdxnet_onnx, htdemucs, segm_models, mel_band_roformer, bs_roformer, swin_upernet, bandit")
     parser.add_argument("--config_path", type=str, help="path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint to start training")
     parser.add_argument("--load_optimizer", action='store_true',
@@ -143,7 +143,7 @@ def parse_args_valid(dict_args: Union[Dict, None]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer,"
+                        help="One of mdx23c, mdxnet_onnx, htdemucs, segm_models, mel_band_roformer,"
                              " bs_roformer, swin_upernet, bandit")
     parser.add_argument("--config_path", type=str, help="Path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint"
@@ -197,7 +197,7 @@ def parse_args_inference(dict_args: Union[Dict, None]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of bandit, bandit_v2, bs_roformer, htdemucs, mdx23c, mel_band_roformer,"
+                        help="One of bandit, bandit_v2, bs_roformer, htdemucs, mdx23c, mdxnet_onnx, mel_band_roformer,"
                              " scnet, scnet_unofficial, segm_models, swin_upernet, torchseg")
     parser.add_argument("--config_path", type=str, help="path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint to valid weights")
@@ -318,6 +318,9 @@ def get_model_from_config(
     if model_type == 'mdx23c':
         from msst.models.mdx23c_tfc_tdf_v3 import TFC_TDF_net
         model = TFC_TDF_net(config)
+    elif model_type == 'mdxnet_onnx':
+        from msst.models.mdxnet_onnx import MDXNetONNX
+        model = MDXNetONNX(config)
     elif model_type == 'htdemucs':
         from msst.models.demucs4ht import get_model
         model = get_model(config)
