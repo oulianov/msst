@@ -4,7 +4,6 @@ from functools import wraps
 
 import torch
 import torch.nn.functional as F
-from einops import rearrange, reduce
 from packaging import version
 from torch import einsum, nn
 
@@ -13,6 +12,7 @@ from torch import einsum, nn
 FlashAttentionConfig = namedtuple(
     "FlashAttentionConfig", ["enable_flash", "enable_math", "enable_mem_efficient"]
 )
+CUDA_SDPA_MAX_BATCH_SIZE = 65535
 
 # helpers
 
@@ -41,6 +41,7 @@ def once(fn):
 
 print_once = once(print)
 print_sage_attention_once = once(print)
+print_attention_split_once = once(print)
 
 # main class
 
@@ -96,12 +97,7 @@ class Attend(nn.Module):
             self.cuda_config = FlashAttentionConfig(False, True, True)
 
     def flash_attn(self, q, k, v):
-        _, heads, q_len, _, k_len, is_cuda, device = (
-            *q.shape,
-            k.shape[-2],
-            q.is_cuda,
-            q.device,
-        )
+        is_cuda = q.is_cuda
 
         if exists(self.scale):
             default_scale = q.shape[-1] ** -0.5
@@ -114,9 +110,29 @@ class Attend(nn.Module):
         # pytorch 2.0 flash attn: q, k, v, mask, dropout, softmax_scale
 
         with torch.backends.cuda.sdp_kernel(**config._asdict()):
-            out = F.scaled_dot_product_attention(
-                q, k, v, dropout_p=self.dropout if self.training else 0.0
-            )
+            dropout_p = self.dropout if self.training else 0.0
+            # RoFormer packs audio batch * STFT frames into the attention batch.
+            # CUDA fused SDPA kernels cannot launch a grid with batch > 65535.
+            if is_cuda and q.shape[0] > CUDA_SDPA_MAX_BATCH_SIZE:
+                print_attention_split_once(
+                    f"Splitting CUDA attention batch {q.shape[0]} into batches of "
+                    f"at most {CUDA_SDPA_MAX_BATCH_SIZE}; keeping fused attention enabled"
+                )
+                out = torch.cat(
+                    [
+                        F.scaled_dot_product_attention(
+                            q_part, k_part, v_part, dropout_p=dropout_p
+                        )
+                        for q_part, k_part, v_part in zip(
+                            q.split(CUDA_SDPA_MAX_BATCH_SIZE),
+                            k.split(CUDA_SDPA_MAX_BATCH_SIZE),
+                            v.split(CUDA_SDPA_MAX_BATCH_SIZE),
+                        )
+                    ],
+                    dim=0,
+                )
+            else:
+                out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
 
         return out
 
@@ -152,15 +168,15 @@ class Attend(nn.Module):
         d - feature dimension
         """
 
-        q_len, k_len, device = q.shape[-2], k.shape[-2], q.device
-
         scale = default(self.scale, q.shape[-1] ** -0.5)
 
         if self.sage_attention:
             if not q.is_cuda:
                 raise RuntimeError("sage_attention=True requires CUDA tensors.")
             if self.training:
-                raise RuntimeError("sage_attention=True is only supported in eval mode.")
+                raise RuntimeError(
+                    "sage_attention=True is only supported in eval mode."
+                )
             if q.dtype not in (torch.float16, torch.bfloat16):
                 raise RuntimeError(
                     "sage_attention=True requires float16 or bfloat16 attention tensors."
@@ -176,7 +192,7 @@ class Attend(nn.Module):
 
         # similarity
 
-        sim = einsum(f"b h i d, b h j d -> b h i j", q, k) * scale
+        sim = einsum("b h i d, b h j d -> b h i j", q, k) * scale
 
         # attention
 
@@ -185,6 +201,6 @@ class Attend(nn.Module):
 
         # aggregate values
 
-        out = einsum(f"b h i j, b h j d -> b h i d", attn, v)
+        out = einsum("b h i j, b h j d -> b h i d", attn, v)
 
         return out
