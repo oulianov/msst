@@ -348,6 +348,9 @@ def get_model_from_config(
     elif model_type == 'bs_roformer_experimental':
         from msst.models.bs_roformer.bs_roformer_experimental import BSRoformer
         model = BSRoformer(**dict(config.model))
+    elif model_type == 'bs_roformer_spatial':
+        from msst.models.bs_roformer.bs_roformer_spatial import BSRoformer
+        model = BSRoformer(**dict(config.model))
     elif model_type == 'bs_mamba2':
         from msst.models.bs_mamba2_code.bs_mamba2 import BSMamba2Model
         model = BSMamba2Model(**dict(config.model))
